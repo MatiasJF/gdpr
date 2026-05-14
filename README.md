@@ -46,20 +46,43 @@ Revocation inscription:
 }
 ```
 
+## Surfaces
+
+| Path | Role | Notes |
+|---|---|---|
+| `/` | Marketplace landing ("Northgate") | Hosts the cookie consent banner; demonstrates a real-feel entry-point. |
+| `/consents` | Subject inbox | Enumerates live consent tokens; per-row revoke; proof-bundle export. |
+| `/request` | Simulated controller request | Generic-consent flow (any purpose IDs, any policy text). |
+| `/decode` | Public decoder | Paste any txid; fetches the tx, extracts the consent inscription, displays it with live/revoked state. No wallet required. |
+
 ## Flows
 
-1. **Issue** — `/request` page: controller serves a consent envelope via
-   `POST /api/consent/request`. The subject reviews it, then mints a 1Sat Ordinal
-   consent token into their own wallet via `wallet.createToken(...)`.
-2. **List / inspect** — `/` page enumerates live consent tokens in the subject's
-   wallet basket `gdpr-consent-v1`.
-3. **Revoke** — one click on `/`. Publishes a revocation inscription and redeems the
-   original token. (Two non-atomic txs — see `lib/consent/token.ts`.)
-4. **Export proof bundle** — subject downloads a JSON bundle of their live consent
-   tokens (outpoint + inscription) via the **Download proof bundle** button on `/`.
-5. **Audit** — controller `POST`s the outpoints from the bundle to
-   `/api/consent/audit` with `{ network, outpoints }`. The endpoint queries
-   WhatsOnChain and partitions them into `live`, `revoked`, and `missing`.
+1. **Cookie consent (marketplace)** — `/` shows a polished cookie banner. The
+   subject can accept all, decline, or customise per category
+   (functional / analytics / advertising; strictly-necessary is always on).
+   Acceptance mints a 1Sat Ordinal consent token with `purpose_ids` of the form
+   `cookies:<category>`, controller `did:bsv:demo-northgate-market`, and a
+   policy hash bound to `lib/consent/cookies.ts:NORTHGATE_COOKIE_POLICY`.
+   Re-visit detects the live token and suppresses the banner. The footer
+   "Manage cookie preferences" link re-opens the customise modal.
+2. **General consent (controller request)** — `/request`: controller posts a
+   policy envelope to `POST /api/consent/request`, the subject reviews it, and
+   mints a `gdpr-consent-v1` token into their wallet.
+3. **List / inspect** — `/consents` enumerates tokens in the `gdpr-consent-v1`
+   basket.
+4. **Revoke** — one click on a row in `/consents`. Publishes a revocation
+   inscription and redeems the original token. (Two non-atomic txs — see
+   `lib/consent/token.ts`.)
+5. **Export proof bundle** — `/consents` → **Download proof bundle**: JSON file
+   of live tokens with outpoints + inscriptions.
+6. **Audit** — controller `POST`s the outpoints to `/api/consent/audit` with
+   `{ network, outpoints }`. The endpoint queries WhatsOnChain and partitions
+   them into `live`, `revoked`, and `missing`.
+7. **Decode** — `/decode` (or `GET /api/decode?txid=…&network=…`) fetches a tx
+   from the public chain, extracts the consent inscription via a tolerant
+   data-push scanner, and renders the JSON metadata alongside the on-chain
+   spent state. **No wallet required** — this is the public-verifiability
+   demonstration that the paper's audit story depends on.
 
 ## Run
 
@@ -99,11 +122,13 @@ The response is `{ live: [...], revoked: [...], missing: [...] }`.
 - [x] Bootstrap Next.js + simple-mcp scaffolds
 - [x] Consent inscription schema (v1) + browser-side mint/list/revoke
 - [x] Controller envelope endpoint (hashes plaintext policy)
-- [x] Subject UI: `/` (consent inbox) and `/request` (grant flow)
+- [x] Subject UI: marketplace landing, `/consents`, `/request`
 - [x] Subject proof-bundle export (live tokens, JSON)
 - [x] Controller audit endpoint (WhatsOnChain presence + spent-state check)
 - [x] Testnet end-to-end documented (manual)
-- [ ] Inscription-script parsing in audit endpoint (currently trusts caller bundle)
+- [x] Cookie consent flow on the marketplace landing (granular per-category)
+- [x] Public decoder (`/decode` + `/api/decode`) — no wallet required
+- [ ] Strict inscription-envelope parsing in audit endpoint (still trusts caller bundle)
 - [ ] Point-in-time audit (block-height-resolved state at past timestamps)
 - [ ] BEEF-formatted proof bundles for offline / portable audits
 - [ ] BRC draft for the consent-token metadata format
