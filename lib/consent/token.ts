@@ -23,30 +23,39 @@ export async function issueConsentToken(
 }
 
 export type LiveConsent = { outpoint: string; data: ConsentInscriptionV1 };
+export type RevokedConsent = {
+  consentOutpoint: string;
+  consentData: ConsentInscriptionV1 | null;
+  revocationOutpoint: string;
+  revocationData: ConsentRevocationV1;
+};
+
+type Output = { outpoint: string; lockingScript: string };
+
+async function listBasket(wallet: BrowserWallet, basket: string): Promise<Output[]> {
+  const result = (await wallet.getClient().listOutputs({
+    basket,
+    include: "locking scripts",
+  })) as { outputs?: Output[] };
+  return result.outputs ?? [];
+}
 
 export async function listConsentTokens(
   wallet: BrowserWallet,
 ): Promise<LiveConsent[]> {
-  const client = wallet.getClient();
-  const [consentResult, revocationResult] = await Promise.all([
-    client.listOutputs({
-      basket: CONSENT_BASKET,
-      include: "locking scripts",
-    }),
-    client.listOutputs({
-      basket: REVOCATION_BASKET,
-      include: "locking scripts",
-    }),
+  const [consentOutputs, revocationOutputs] = await Promise.all([
+    listBasket(wallet, CONSENT_BASKET),
+    listBasket(wallet, REVOCATION_BASKET),
   ]);
 
   const revokedRefs = new Set<string>();
-  for (const o of (revocationResult as { outputs?: Array<{ outpoint: string; lockingScript: string }> }).outputs ?? []) {
+  for (const o of revocationOutputs) {
     const parsed = parseScriptForConsent(o.lockingScript);
     if (parsed?.kind === "revocation") revokedRefs.add(parsed.data.ref);
   }
 
   const live: LiveConsent[] = [];
-  for (const o of (consentResult as { outputs?: Array<{ outpoint: string; lockingScript: string }> }).outputs ?? []) {
+  for (const o of consentOutputs) {
     if (revokedRefs.has(o.outpoint)) continue;
     const parsed = parseScriptForConsent(o.lockingScript);
     if (parsed?.kind === "consent") {
@@ -54,6 +63,37 @@ export async function listConsentTokens(
     }
   }
   return live;
+}
+
+export async function listRevokedConsents(
+  wallet: BrowserWallet,
+): Promise<RevokedConsent[]> {
+  const [consentOutputs, revocationOutputs] = await Promise.all([
+    listBasket(wallet, CONSENT_BASKET),
+    listBasket(wallet, REVOCATION_BASKET),
+  ]);
+
+  const consentByOutpoint = new Map<string, ConsentInscriptionV1>();
+  for (const o of consentOutputs) {
+    const parsed = parseScriptForConsent(o.lockingScript);
+    if (parsed?.kind === "consent") consentByOutpoint.set(o.outpoint, parsed.data);
+  }
+
+  const revoked: RevokedConsent[] = [];
+  for (const o of revocationOutputs) {
+    const parsed = parseScriptForConsent(o.lockingScript);
+    if (parsed?.kind !== "revocation") continue;
+    revoked.push({
+      consentOutpoint: parsed.data.ref,
+      consentData: consentByOutpoint.get(parsed.data.ref) ?? null,
+      revocationOutpoint: o.outpoint,
+      revocationData: parsed.data,
+    });
+  }
+
+  return revoked.sort((a, b) =>
+    b.revocationData.revoked_at.localeCompare(a.revocationData.revoked_at),
+  );
 }
 
 // Revocation publishes a plaintext revocation inscription that references the
