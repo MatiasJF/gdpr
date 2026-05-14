@@ -71,8 +71,9 @@ Revocation inscription:
 3. **List / inspect** — `/consents` enumerates tokens in the `gdpr-consent-v1`
    basket.
 4. **Revoke** — one click on a row in `/consents`. Publishes a revocation
-   inscription and redeems the original token. (Two non-atomic txs — see
-   `lib/consent/token.ts`.)
+   inscription into the `gdpr-consent-revocation-v1` basket. The original
+   consent inscription stays on-chain as the historical record; live state =
+   consents minus revocations whose `ref` matches.
 5. **Export proof bundle** — `/consents` → **Download proof bundle**: JSON file
    of live tokens with outpoints + inscriptions.
 6. **Audit** — controller `POST`s the outpoints to `/api/consent/audit` with
@@ -116,6 +117,18 @@ The response is `{ live: [...], revoked: [...], missing: [...] }`.
 8. Back on `/`, click **Revoke** on the token. Two txs broadcast (revocation
    inscription + redeem). Re-run the audit `curl` — the outpoint now appears
    under `revoked` with the spending txid in `spentBy`.
+
+## A note on the mint primitive
+
+We use `wallet.inscribeJSON(...)`, **not** `wallet.createToken(...)`.
+The `createToken` primitive in `@bsv/simple` encrypts the payload with a
+wallet-derived key under `counterparty: 'self'` — only the minting wallet can
+ever read it back. That trivially breaks public verifiability. Any consent
+record we put on chain must be plaintext to anyone fetching the tx.
+
+If you minted via an earlier version of this PoC that used `createToken`,
+those tokens are encrypted on chain and the decoder will not find them.
+Re-mint with the current code to test the decoder.
 
 ## Status
 

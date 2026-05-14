@@ -161,7 +161,7 @@ The reference implementation accompanying this paper is a Next.js application th
 
 The application is built on Next.js 16 (App Router, TypeScript, Tailwind), with BSV Blockchain primitives provided by the `@bsv/simple` package — itself a scaffolding layer over the BSV Blockchain TypeScript SDK (`@bsv/sdk`) and the `@bsv/wallet-toolbox`. The package's `simple-mcp` Model Context Protocol server was used to generate the lower-level wallet and server-route scaffolds; the consent-specific logic was written directly against the SDK.
 
-The wallet, both the subject's browser wallet and the controller's server wallet, is bootstrapped through `createWallet()` and `createServerWalletHandler()` respectively. DID resolution is proxied through a Next.js API route to a public BSV DID resolver. The 1Sat Ordinal token mechanics are exposed through `wallet.createToken({ data, basket, satoshis: 1 })`, with the consent inscription supplied as `data`.
+The wallet, both the subject's browser wallet and the controller's server wallet, is bootstrapped through `createWallet()` and `createServerWalletHandler()` respectively. DID resolution is proxied through a Next.js API route to a public BSV DID resolver. The consent inscription is published to the chain through `wallet.inscribeJSON(inscription, { basket })`, which writes the JSON metadata as a plaintext data push in the output's locking script. (A note on primitive selection: the `@bsv/simple` package also exposes a `wallet.createToken(...)` primitive whose superficial API is identical, but it encrypts the data with a wallet-derived key under `counterparty: 'self'` semantics, rendering the on-chain bytes unreadable to any party other than the minting wallet. That primitive is incompatible with the public-verifiability requirement of this architecture and is deliberately not used.)
 
 ### 5.2 Issue flow
 
@@ -175,7 +175,7 @@ The subject's consent inbox at `/` enumerates tokens in the `gdpr-consent-v1` ba
 
 ### 5.4 Revoke flow
 
-A single button on each consent row triggers the revocation. The wallet first broadcasts a revocation inscription (`type: gdpr-consent-revocation-v1`, referencing the original outpoint with the revocation timestamp), then redeems the original token. The two transactions are non-atomic; if the second fails, the public revocation inscription nevertheless stands as the canonical revocation record. The subject's wallet treats the redeem as a local-state operation; the chain is the source of truth.
+A single button on each consent row triggers the revocation. The wallet broadcasts a revocation inscription (`type: gdpr-consent-revocation-v1`, referencing the original outpoint with the revocation timestamp) into a dedicated revocation basket. The original consent inscription's output is *not* spent — its data is the historical record that the consent existed, which the regulator needs to be able to find years later. Live state is computed by the subject's wallet (and by any auditor) as the set of consent inscriptions minus the set of revocation inscriptions whose `ref` matches. The architecture deliberately makes both grant and revocation *additive* events on the public chain rather than mutations of a token's UTXO status — this preserves the full audit history at the cost of a slightly more involved live-state calculation.
 
 ### 5.5 Audit flow
 
