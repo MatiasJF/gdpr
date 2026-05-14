@@ -1,4 +1,5 @@
 export const CONSENT_BASKET = "gdpr-consent-v1";
+export const REVOCATION_BASKET = "gdpr-consent-revocation-v1";
 
 export type ConsentInscriptionV1 = {
   type: "gdpr-consent-v1";

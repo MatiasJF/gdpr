@@ -161,7 +161,7 @@ The reference implementation accompanying this paper is a Next.js application th
 
 The application is built on Next.js 16 (App Router, TypeScript, Tailwind), with BSV Blockchain primitives provided by the `@bsv/simple` package — itself a scaffolding layer over the BSV Blockchain TypeScript SDK (`@bsv/sdk`) and the `@bsv/wallet-toolbox`. The package's `simple-mcp` Model Context Protocol server was used to generate the lower-level wallet and server-route scaffolds; the consent-specific logic was written directly against the SDK.
 
-The wallet, both the subject's browser wallet and the controller's server wallet, is bootstrapped through `createWallet()` and `createServerWalletHandler()` respectively. DID resolution is proxied through a Next.js API route to a public BSV DID resolver. The 1Sat Ordinal token mechanics are exposed through `wallet.createToken({ data, basket, satoshis: 1 })`, with the consent inscription supplied as `data`.
+The wallet, both the subject's browser wallet and the controller's server wallet, is bootstrapped through `createWallet()` and `createServerWalletHandler()` respectively. DID resolution is proxied through a Next.js API route to a public BSV DID resolver. The consent inscription is published to the chain through `wallet.inscribeJSON(inscription, { basket })`, which writes the JSON metadata as a plaintext data push in the output's locking script. (A note on primitive selection: the `@bsv/simple` package also exposes a `wallet.createToken(...)` primitive whose superficial API is identical, but it encrypts the data with a wallet-derived key under `counterparty: 'self'` semantics, rendering the on-chain bytes unreadable to any party other than the minting wallet. That primitive is incompatible with the public-verifiability requirement of this architecture and is deliberately not used.)
 
 ### 5.2 Issue flow
 
@@ -175,15 +175,27 @@ The subject's consent inbox at `/` enumerates tokens in the `gdpr-consent-v1` ba
 
 ### 5.4 Revoke flow
 
-A single button on each consent row triggers the revocation. The wallet first broadcasts a revocation inscription (`type: gdpr-consent-revocation-v1`, referencing the original outpoint with the revocation timestamp), then redeems the original token. The two transactions are non-atomic; if the second fails, the public revocation inscription nevertheless stands as the canonical revocation record. The subject's wallet treats the redeem as a local-state operation; the chain is the source of truth.
+A single button on each consent row triggers the revocation. The wallet broadcasts a revocation inscription (`type: gdpr-consent-revocation-v1`, referencing the original outpoint with the revocation timestamp) into a dedicated revocation basket. The original consent inscription's output is *not* spent — its data is the historical record that the consent existed, which the regulator needs to be able to find years later. Live state is computed by the subject's wallet (and by any auditor) as the set of consent inscriptions minus the set of revocation inscriptions whose `ref` matches. The architecture deliberately makes both grant and revocation *additive* events on the public chain rather than mutations of a token's UTXO status — this preserves the full audit history at the cost of a slightly more involved live-state calculation.
 
 ### 5.5 Audit flow
 
 A controller audits by posting outpoints to `POST /api/consent/audit`. The endpoint queries the WhatsOnChain block-explorer API for each outpoint's transaction existence and spent-state and partitions the results into `live`, `revoked`, and `missing`. Live consents come back with the unspent confirmation; revoked consents come back with the spending transaction ID, which is itself referenceable to the revocation inscription.
 
-### 5.6 Status and open work
+### 5.6 The cookie-consent specialisation
 
-At the time of this draft, the PoC supports the four flows above end-to-end against the BSV Blockchain testnet. Open items, tracked in the repository README, include: inscription-script parsing in the audit endpoint (currently the endpoint trusts the caller's claimed inscription metadata against an on-chain presence check); point-in-time audit (block-height-resolved state at past timestamps); BEEF-formatted proof bundles for offline / portable audits; and a draft Bitcoin Request for Comments (BRC) standardising the consent-token metadata format.
+The architecture generalises directly to cookie consent under the ePrivacy Directive (2002/58/EC, Article 5(3)), which requires consent for the storage of and access to information on a user's terminal equipment. The PoC implements a "Northgate Market" demonstration site whose landing page hosts a granular cookie-consent banner. On acceptance, the subject mints a `gdpr-consent-v1` token whose `purpose_ids` are of the form `cookies:functional`, `cookies:analytics`, `cookies:advertising` — preserving the per-purpose granularity that the ePrivacy regime and the EDPB's Article 7 jurisprudence both require. Withdrawal symmetry is realised in the same way as for the general consent case: the same wallet that minted the token can revoke it from any page of the site via a single footer action.
+
+The cookie-consent specialisation is significant because the cookie domain is operationally the most regulated and the most subject to compliance-tooling proliferation in the EU; an architecture that handles it natively is an architecture that addresses the largest single category of consent interactions on the continent.
+
+### 5.7 Public decoder and the verifiability argument
+
+The PoC includes a public decoder (`/decode` in the application and `GET /api/decode` programmatically) that takes only a transaction ID and a network identifier as input. It fetches the raw transaction from the public chain via WhatsOnChain, parses the locking scripts of the transaction's outputs, and identifies any `gdpr-consent-*` inscription bytes through a tolerant data-push scanner. The decoder renders the inscription's full JSON metadata, the inferred state of the output (live, revoked, or unknown), and the on-chain references — all without requiring access to any wallet, any controller-side database, or any privileged credential.
+
+This is the operational instantiation of the Section 4.4 audit argument and of the broader public-verifiability claim. The architecture's regulatory force depends on the proposition that anyone — supervisory authority, court-appointed expert, journalist, the data subject themselves — can independently inspect the on-chain commitment. The decoder makes that proposition concrete: any reader of this paper with an internet connection and a transaction ID can reproduce the audit. The asymmetry that defines the current state of the practice, in which only the controller can produce or verify their own consent records, is dissolved by the existence of a tool that any party can run.
+
+### 5.8 Status and open work
+
+At the time of this draft, the PoC supports the seven flows above end-to-end against the BSV Blockchain testnet. Open items, tracked in the repository README, include: strict inscription-envelope parsing in the audit endpoint (the v0 decoder uses a tolerant data-push scanner sufficient for the PoC; production should parse the envelope structure directly); point-in-time audit (block-height-resolved state at past timestamps); BEEF-formatted proof bundles for offline / portable audits; and a draft Bitcoin Request for Comments (BRC) standardising the consent-token metadata format.
 
 ---
 
