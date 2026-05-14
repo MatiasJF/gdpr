@@ -55,6 +55,11 @@ Revocation inscription:
    wallet basket `gdpr-consent-v1`.
 3. **Revoke** — one click on `/`. Publishes a revocation inscription and redeems the
    original token. (Two non-atomic txs — see `lib/consent/token.ts`.)
+4. **Export proof bundle** — subject downloads a JSON bundle of their live consent
+   tokens (outpoint + inscription) via the **Download proof bundle** button on `/`.
+5. **Audit** — controller `POST`s the outpoints from the bundle to
+   `/api/consent/audit` with `{ network, outpoints }`. The endpoint queries
+   WhatsOnChain and partitions them into `live`, `revoked`, and `missing`.
 
 ## Run
 
@@ -65,15 +70,42 @@ npm run dev
 
 Open http://localhost:3000.
 
+## Testnet end-to-end (manual)
+
+1. Boot the dev server (`npm run dev`).
+2. On `/`, click **Connect wallet** to bootstrap a fresh browser wallet.
+3. Fund the wallet with a small amount of testnet sats (any BSV testnet faucet).
+4. Navigate to `/request`, fill in the controller DID / purposes / policy, click
+   **Grant consent**. A 1Sat Ordinal consent token is broadcast and minted into
+   the wallet's `gdpr-consent-v1` basket. The minted txid is shown.
+5. Return to `/`. The token appears in the inbox.
+6. Click **Download proof bundle**. A JSON file is saved locally.
+7. Hand the bundle to a simulated controller. They `POST` the outpoints back:
+
+```bash
+curl -X POST http://localhost:3000/api/consent/audit \
+  -H 'content-type: application/json' \
+  -d '{"network":"test","outpoints":["<txid>.0"]}'
+```
+
+The response is `{ live: [...], revoked: [...], missing: [...] }`.
+
+8. Back on `/`, click **Revoke** on the token. Two txs broadcast (revocation
+   inscription + redeem). Re-run the audit `curl` — the outpoint now appears
+   under `revoked` with the spending txid in `spentBy`.
+
 ## Status
 
 - [x] Bootstrap Next.js + simple-mcp scaffolds
 - [x] Consent inscription schema (v1) + browser-side mint/list/revoke
 - [x] Controller envelope endpoint (hashes plaintext policy)
 - [x] Subject UI: `/` (consent inbox) and `/request` (grant flow)
-- [ ] Controller audit endpoint (replays on-chain state against off-chain plaintext)
-- [ ] Proof-bundle export (BEEF + off-chain plaintext) for DPA-style audits
-- [ ] End-to-end test against BSV testnet
+- [x] Subject proof-bundle export (live tokens, JSON)
+- [x] Controller audit endpoint (WhatsOnChain presence + spent-state check)
+- [x] Testnet end-to-end documented (manual)
+- [ ] Inscription-script parsing in audit endpoint (currently trusts caller bundle)
+- [ ] Point-in-time audit (block-height-resolved state at past timestamps)
+- [ ] BEEF-formatted proof bundles for offline / portable audits
 - [ ] BRC draft for the consent-token metadata format
 
 ## Classification
