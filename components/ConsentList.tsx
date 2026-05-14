@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useWallet } from "./WalletProvider";
 import { listConsentTokens, revokeConsentToken } from "@/lib/consent/token";
+import { buildProofBundle, downloadBundle } from "@/lib/consent/proof";
 import type { ConsentInscriptionV1 } from "@/lib/consent/schema";
 
 type Row = { outpoint: string; data: ConsentInscriptionV1 };
@@ -37,11 +38,26 @@ export default function ConsentList() {
     }
   };
 
+  const onExport = async () => {
+    if (!wallet) return;
+    const bundle = await buildProofBundle(wallet);
+    downloadBundle(bundle);
+  };
+
   if (rows.length === 0) {
     return <p className="text-sm text-zinc-500">No live consent tokens.</p>;
   }
 
   return (
+    <div className="flex flex-col gap-4">
+      <div className="flex justify-end">
+        <button
+          onClick={onExport}
+          className="rounded-md border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          Download proof bundle
+        </button>
+      </div>
     <ul className="flex flex-col gap-3">
       {rows.map((r) => (
         <li
@@ -78,5 +94,6 @@ export default function ConsentList() {
         </li>
       ))}
     </ul>
+    </div>
   );
 }
