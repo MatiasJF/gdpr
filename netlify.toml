@@ -1,6 +1,9 @@
+# The @netlify/plugin-nextjs runtime sets the publish directory itself and
+# transforms .next into static assets + serverless functions. Do NOT set a
+# custom `publish` here — pointing it at .next makes Netlify serve the raw
+# build output and conflicts with the plugin (intermittent partial 404s).
 [build]
   command = "npm run build"
-  publish = ".next"
 
 [build.environment]
   NODE_VERSION = "20"
@@ -8,18 +11,3 @@
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
-
-[functions]
-  node_bundler = "esbuild"
-  external_node_modules = [
-    "@bsv/wallet-toolbox",
-    "better-sqlite3",
-    "knex",
-    "tedious",
-    "mysql",
-    "mysql2",
-    "pg",
-    "pg-query-stream",
-    "oracledb",
-    "dotenv"
-  ]
