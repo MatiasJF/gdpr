@@ -10,6 +10,8 @@ import {
   type RevokedConsent,
 } from "@/lib/consent/token";
 import { buildProofBundle, downloadBundle } from "@/lib/consent/proof";
+import { toChainNetwork, wocTxUrl, decodeUrl } from "@/lib/consent/explorer";
+import type { Network } from "@/lib/consent/chain";
 
 type Tab = "live" | "revoked";
 
@@ -17,6 +19,7 @@ type Toast = { revocationTxid: string; consentOutpoint: string } | null;
 
 export default function ConsentList() {
   const { wallet } = useWallet();
+  const network: Network = toChainNetwork(wallet?.defaults.network);
   const [tab, setTab] = useState<Tab>("live");
   const [live, setLive] = useState<LiveConsent[]>([]);
   const [revoked, setRevoked] = useState<RevokedConsent[]>([]);
@@ -61,6 +64,7 @@ export default function ConsentList() {
       {toast && (
         <RevocationToast
           toast={toast}
+          network={network}
           onDismiss={() => setToast(null)}
         />
       )}
@@ -85,9 +89,9 @@ export default function ConsentList() {
       </div>
 
       {tab === "live" ? (
-        <LiveList rows={live} busy={busy} onRevoke={onRevoke} />
+        <LiveList rows={live} busy={busy} network={network} onRevoke={onRevoke} />
       ) : (
-        <RevokedList rows={revoked} />
+        <RevokedList rows={revoked} network={network} />
       )}
     </section>
   );
@@ -126,9 +130,11 @@ function Pill({ children }: { children: React.ReactNode }) {
 
 function RevocationToast({
   toast,
+  network,
   onDismiss,
 }: {
   toast: NonNullable<Toast>;
+  network: Network;
   onDismiss: () => void;
 }) {
   return (
@@ -155,13 +161,13 @@ function RevocationToast({
           tx: {toast.revocationTxid}
         </span>
         <Link
-          href={`/decode?txid=${toast.revocationTxid}`}
+          href={decodeUrl(network, toast.revocationTxid)}
           className="rounded-md border border-emerald-300 bg-white px-2 py-1 font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200 dark:hover:bg-emerald-900"
         >
           Decode →
         </Link>
         <a
-          href={`https://whatsonchain.com/tx/${toast.revocationTxid}`}
+          href={wocTxUrl(network, toast.revocationTxid)}
           target="_blank"
           rel="noopener noreferrer"
           className="rounded-md border border-emerald-300 bg-white px-2 py-1 font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200 dark:hover:bg-emerald-900"
@@ -176,10 +182,12 @@ function RevocationToast({
 function LiveList({
   rows,
   busy,
+  network,
   onRevoke,
 }: {
   rows: LiveConsent[];
   busy: string | null;
+  network: Network;
   onRevoke: (outpoint: string) => void;
 }) {
   if (rows.length === 0) {
@@ -210,13 +218,13 @@ function LiveList({
                 {r.data.scope_expiry && <Detail label="Expires" value={r.data.scope_expiry} />}
                 <div className="mt-1 flex gap-2 text-xs">
                   <Link
-                    href={`/decode?txid=${txid}`}
+                    href={decodeUrl(network, txid)}
                     className="font-semibold text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-400"
                   >
                     Decode
                   </Link>
                   <a
-                    href={`https://whatsonchain.com/tx/${txid}`}
+                    href={wocTxUrl(network, txid)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="font-semibold text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-400"
@@ -240,7 +248,7 @@ function LiveList({
   );
 }
 
-function RevokedList({ rows }: { rows: RevokedConsent[] }) {
+function RevokedList({ rows, network }: { rows: RevokedConsent[]; network: Network }) {
   if (rows.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-zinc-300 bg-white py-12 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900">
@@ -284,19 +292,19 @@ function RevokedList({ rows }: { rows: RevokedConsent[] }) {
               <Detail label="Revocation outpoint" value={r.revocationOutpoint} mono />
               <div className="mt-2 flex flex-wrap gap-2 text-xs">
                 <Link
-                  href={`/decode?txid=${revocationTxid}`}
+                  href={decodeUrl(network, revocationTxid)}
                   className="rounded-md border border-zinc-300 bg-white px-2 py-1 font-semibold hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
                 >
                   Decode revocation
                 </Link>
                 <Link
-                  href={`/decode?txid=${consentTxid}`}
+                  href={decodeUrl(network, consentTxid)}
                   className="rounded-md border border-zinc-300 bg-white px-2 py-1 font-semibold hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
                 >
                   Decode original
                 </Link>
                 <a
-                  href={`https://whatsonchain.com/tx/${revocationTxid}`}
+                  href={wocTxUrl(network, revocationTxid)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="rounded-md border border-zinc-300 bg-white px-2 py-1 font-semibold hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
