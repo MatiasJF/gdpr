@@ -17,6 +17,7 @@ export default function SiteHeader() {
           <NavLink href="/">Market</NavLink>
           <NavLink href="/consents">My consents</NavLink>
           <NavLink href="/decode">Decode</NavLink>
+          <NavLink href="/erasure">Erasure</NavLink>
         </nav>
       </div>
     </header>

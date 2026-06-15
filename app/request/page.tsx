@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useWallet, WalletGate, WalletStatus } from "@/components/WalletProvider";
 import { issueConsentToken } from "@/lib/consent/token";
 import type { ConsentInscriptionV1 } from "@/lib/consent/schema";
-import { hashPolicyClient } from "@/lib/consent/clientHash";
 
 const DEFAULT_CONTROLLER = "did:bsv:demo-controller";
 const DEFAULT_POLICY = `Acme Corp will use the data you provide solely for the purposes listed below.
@@ -24,6 +23,7 @@ function GrantForm() {
     setBusy(true);
     setStatus(null);
     try {
+      const subjectId = wallet.getIdentityKey();
       const envelopeRes = await fetch("/api/consent/request", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -31,15 +31,17 @@ function GrantForm() {
           controller,
           purpose_ids: purposes.split(",").map((s) => s.trim()).filter(Boolean),
           policy_text: policyText,
+          subject_id: subjectId,
         }),
       });
       const envelope = await envelopeRes.json();
 
-      const subjectId = wallet.getIdentityKey();
+      // The pseudonym is derived controller-side from a random per-consent salt
+      // held off-chain; the client just carries it onto the chain.
       const inscription: ConsentInscriptionV1 = {
         type: "gdpr-consent-v1",
         controller: envelope.controller,
-        subject_pseudonym: await hashPolicyClient(`${subjectId}|${envelope.controller}|poc-salt`),
+        subject_pseudonym: envelope.subject_pseudonym,
         purpose_ids: envelope.purpose_ids,
         policy_hash: envelope.policy_hash,
         issued_at: new Date().toISOString(),

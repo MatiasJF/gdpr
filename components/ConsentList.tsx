@@ -10,13 +10,20 @@ import {
   type RevokedConsent,
 } from "@/lib/consent/token";
 import { buildProofBundle, downloadBundle } from "@/lib/consent/proof";
+import { toChainNetwork, wocTxUrl, decodeUrl } from "@/lib/consent/explorer";
+import type { Network } from "@/lib/consent/chain";
 
 type Tab = "live" | "revoked";
 
-type Toast = { revocationTxid: string; consentOutpoint: string } | null;
+type Toast = {
+  revocationTxid: string;
+  consentOutpoint: string;
+  subjectPseudonym: string;
+} | null;
 
 export default function ConsentList() {
   const { wallet } = useWallet();
+  const network: Network = toChainNetwork(wallet?.defaults.network);
   const [tab, setTab] = useState<Tab>("live");
   const [live, setLive] = useState<LiveConsent[]>([]);
   const [revoked, setRevoked] = useState<RevokedConsent[]>([]);
@@ -37,12 +44,16 @@ export default function ConsentList() {
     refresh();
   }, [refresh]);
 
-  const onRevoke = async (outpoint: string) => {
+  const onRevoke = async (outpoint: string, subjectPseudonym: string) => {
     if (!wallet) return;
     setBusy(outpoint);
     try {
       const result = await revokeConsentToken(wallet, outpoint);
-      setToast({ revocationTxid: result.txid, consentOutpoint: outpoint });
+      setToast({
+        revocationTxid: result.txid,
+        consentOutpoint: outpoint,
+        subjectPseudonym,
+      });
       await refresh();
       setTab("revoked");
     } finally {
@@ -61,6 +72,7 @@ export default function ConsentList() {
       {toast && (
         <RevocationToast
           toast={toast}
+          network={network}
           onDismiss={() => setToast(null)}
         />
       )}
@@ -85,9 +97,9 @@ export default function ConsentList() {
       </div>
 
       {tab === "live" ? (
-        <LiveList rows={live} busy={busy} onRevoke={onRevoke} />
+        <LiveList rows={live} busy={busy} network={network} onRevoke={onRevoke} />
       ) : (
-        <RevokedList rows={revoked} />
+        <RevokedList rows={revoked} network={network} />
       )}
     </section>
   );
@@ -126,11 +138,52 @@ function Pill({ children }: { children: React.ReactNode }) {
 
 function RevocationToast({
   toast,
+  network,
   onDismiss,
 }: {
   toast: NonNullable<Toast>;
+  network: Network;
   onDismiss: () => void;
 }) {
+  // Withdrawal (Art. 7(3)) and erasure (Art. 17) are distinct. The revocation
+  // above is the withdrawal signal; this is the separate, optional Art. 17(1)(b)
+  // path — the subject asks the controller to crypto-shred the off-chain salt so
+  // the on-chain commitment becomes anonymous. Offered, not automatic.
+  const [erase, setErase] = useState<"idle" | "busy" | "done" | "skipped" | "error">(
+    "idle",
+  );
+  const [eraseMsg, setEraseMsg] = useState<string | null>(null);
+
+  const requestErasure = async () => {
+    setErase("busy");
+    setEraseMsg(null);
+    try {
+      const res = await fetch("/api/consent/erase", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ subject_pseudonym: toast.subjectPseudonym }),
+      });
+      const json = await res.json();
+      if (res.status === 404) {
+        setErase("skipped");
+        setEraseMsg(
+          "Controller holds no salt for this consent (e.g. issued before crypto-shredding, or store reset). Nothing to erase.",
+        );
+        return;
+      }
+      if (!res.ok) throw new Error(json.error ?? "erasure failed");
+      setErase("done");
+      setEraseMsg(
+        json.status === "already-erased"
+          ? "Already crypto-shredded — the on-chain commitment is anonymous."
+          : "Salt destroyed. The on-chain commitment is now anonymous; the immutable record persists.",
+      );
+    } catch (e) {
+      setErase("error");
+      setEraseMsg((e as Error).message);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm dark:border-emerald-900 dark:bg-emerald-950/40">
       <div className="flex items-start justify-between gap-3">
@@ -155,19 +208,49 @@ function RevocationToast({
           tx: {toast.revocationTxid}
         </span>
         <Link
-          href={`/decode?txid=${toast.revocationTxid}`}
+          href={decodeUrl(network, toast.revocationTxid)}
           className="rounded-md border border-emerald-300 bg-white px-2 py-1 font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200 dark:hover:bg-emerald-900"
         >
           Decode →
         </Link>
         <a
-          href={`https://whatsonchain.com/tx/${toast.revocationTxid}`}
+          href={wocTxUrl(network, toast.revocationTxid)}
           target="_blank"
           rel="noopener noreferrer"
           className="rounded-md border border-emerald-300 bg-white px-2 py-1 font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200 dark:hover:bg-emerald-900"
         >
           WoC ↗
         </a>
+      </div>
+      <div className="mt-1 flex flex-col gap-1.5 border-t border-emerald-200 pt-2 dark:border-emerald-900">
+        <span className="text-xs text-emerald-800 dark:text-emerald-300">
+          Consent was the lawful basis? Withdrawal can trigger erasure under
+          Art. 17(1)(b) — a separate step from the revocation above.
+        </span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={requestErasure}
+            disabled={erase === "busy" || erase === "done"}
+            className="self-start rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+          >
+            {erase === "busy"
+              ? "Erasing…"
+              : erase === "done"
+                ? "Erased ✓"
+                : "Request erasure (Art. 17(1)(b))"}
+          </button>
+        </div>
+        {eraseMsg && (
+          <span
+            className={`text-xs ${
+              erase === "error"
+                ? "text-red-700 dark:text-red-300"
+                : "text-emerald-800 dark:text-emerald-300"
+            }`}
+          >
+            {eraseMsg}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -176,11 +259,13 @@ function RevocationToast({
 function LiveList({
   rows,
   busy,
+  network,
   onRevoke,
 }: {
   rows: LiveConsent[];
   busy: string | null;
-  onRevoke: (outpoint: string) => void;
+  network: Network;
+  onRevoke: (outpoint: string, subjectPseudonym: string) => void;
 }) {
   if (rows.length === 0) {
     return (
@@ -210,13 +295,13 @@ function LiveList({
                 {r.data.scope_expiry && <Detail label="Expires" value={r.data.scope_expiry} />}
                 <div className="mt-1 flex gap-2 text-xs">
                   <Link
-                    href={`/decode?txid=${txid}`}
+                    href={decodeUrl(network, txid)}
                     className="font-semibold text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-400"
                   >
                     Decode
                   </Link>
                   <a
-                    href={`https://whatsonchain.com/tx/${txid}`}
+                    href={wocTxUrl(network, txid)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="font-semibold text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-400"
@@ -226,7 +311,7 @@ function LiveList({
                 </div>
               </div>
               <button
-                onClick={() => onRevoke(r.outpoint)}
+                onClick={() => onRevoke(r.outpoint, r.data.subject_pseudonym)}
                 disabled={busy === r.outpoint}
                 className="self-start rounded-md border border-red-500 bg-white px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50 dark:bg-zinc-900 dark:hover:bg-red-950/40"
               >
@@ -240,7 +325,7 @@ function LiveList({
   );
 }
 
-function RevokedList({ rows }: { rows: RevokedConsent[] }) {
+function RevokedList({ rows, network }: { rows: RevokedConsent[]; network: Network }) {
   if (rows.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-zinc-300 bg-white py-12 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900">
@@ -284,19 +369,19 @@ function RevokedList({ rows }: { rows: RevokedConsent[] }) {
               <Detail label="Revocation outpoint" value={r.revocationOutpoint} mono />
               <div className="mt-2 flex flex-wrap gap-2 text-xs">
                 <Link
-                  href={`/decode?txid=${revocationTxid}`}
+                  href={decodeUrl(network, revocationTxid)}
                   className="rounded-md border border-zinc-300 bg-white px-2 py-1 font-semibold hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
                 >
                   Decode revocation
                 </Link>
                 <Link
-                  href={`/decode?txid=${consentTxid}`}
+                  href={decodeUrl(network, consentTxid)}
                   className="rounded-md border border-zinc-300 bg-white px-2 py-1 font-semibold hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
                 >
                   Decode original
                 </Link>
                 <a
-                  href={`https://whatsonchain.com/tx/${revocationTxid}`}
+                  href={wocTxUrl(network, revocationTxid)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="rounded-md border border-zinc-300 bg-white px-2 py-1 font-semibold hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
