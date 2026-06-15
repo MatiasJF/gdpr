@@ -15,7 +15,11 @@ import type { Network } from "@/lib/consent/chain";
 
 type Tab = "live" | "revoked";
 
-type Toast = { revocationTxid: string; consentOutpoint: string } | null;
+type Toast = {
+  revocationTxid: string;
+  consentOutpoint: string;
+  subjectPseudonym: string;
+} | null;
 
 export default function ConsentList() {
   const { wallet } = useWallet();
@@ -40,12 +44,16 @@ export default function ConsentList() {
     refresh();
   }, [refresh]);
 
-  const onRevoke = async (outpoint: string) => {
+  const onRevoke = async (outpoint: string, subjectPseudonym: string) => {
     if (!wallet) return;
     setBusy(outpoint);
     try {
       const result = await revokeConsentToken(wallet, outpoint);
-      setToast({ revocationTxid: result.txid, consentOutpoint: outpoint });
+      setToast({
+        revocationTxid: result.txid,
+        consentOutpoint: outpoint,
+        subjectPseudonym,
+      });
       await refresh();
       setTab("revoked");
     } finally {
@@ -137,6 +145,45 @@ function RevocationToast({
   network: Network;
   onDismiss: () => void;
 }) {
+  // Withdrawal (Art. 7(3)) and erasure (Art. 17) are distinct. The revocation
+  // above is the withdrawal signal; this is the separate, optional Art. 17(1)(b)
+  // path — the subject asks the controller to crypto-shred the off-chain salt so
+  // the on-chain commitment becomes anonymous. Offered, not automatic.
+  const [erase, setErase] = useState<"idle" | "busy" | "done" | "skipped" | "error">(
+    "idle",
+  );
+  const [eraseMsg, setEraseMsg] = useState<string | null>(null);
+
+  const requestErasure = async () => {
+    setErase("busy");
+    setEraseMsg(null);
+    try {
+      const res = await fetch("/api/consent/erase", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ subject_pseudonym: toast.subjectPseudonym }),
+      });
+      const json = await res.json();
+      if (res.status === 404) {
+        setErase("skipped");
+        setEraseMsg(
+          "Controller holds no salt for this consent (e.g. issued before crypto-shredding, or store reset). Nothing to erase.",
+        );
+        return;
+      }
+      if (!res.ok) throw new Error(json.error ?? "erasure failed");
+      setErase("done");
+      setEraseMsg(
+        json.status === "already-erased"
+          ? "Already crypto-shredded — the on-chain commitment is anonymous."
+          : "Salt destroyed. The on-chain commitment is now anonymous; the immutable record persists.",
+      );
+    } catch (e) {
+      setErase("error");
+      setEraseMsg((e as Error).message);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm dark:border-emerald-900 dark:bg-emerald-950/40">
       <div className="flex items-start justify-between gap-3">
@@ -175,6 +222,36 @@ function RevocationToast({
           WoC ↗
         </a>
       </div>
+      <div className="mt-1 flex flex-col gap-1.5 border-t border-emerald-200 pt-2 dark:border-emerald-900">
+        <span className="text-xs text-emerald-800 dark:text-emerald-300">
+          Consent was the lawful basis? Withdrawal can trigger erasure under
+          Art. 17(1)(b) — a separate step from the revocation above.
+        </span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={requestErasure}
+            disabled={erase === "busy" || erase === "done"}
+            className="self-start rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+          >
+            {erase === "busy"
+              ? "Erasing…"
+              : erase === "done"
+                ? "Erased ✓"
+                : "Request erasure (Art. 17(1)(b))"}
+          </button>
+        </div>
+        {eraseMsg && (
+          <span
+            className={`text-xs ${
+              erase === "error"
+                ? "text-red-700 dark:text-red-300"
+                : "text-emerald-800 dark:text-emerald-300"
+            }`}
+          >
+            {eraseMsg}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -188,7 +265,7 @@ function LiveList({
   rows: LiveConsent[];
   busy: string | null;
   network: Network;
-  onRevoke: (outpoint: string) => void;
+  onRevoke: (outpoint: string, subjectPseudonym: string) => void;
 }) {
   if (rows.length === 0) {
     return (
@@ -234,7 +311,7 @@ function LiveList({
                 </div>
               </div>
               <button
-                onClick={() => onRevoke(r.outpoint)}
+                onClick={() => onRevoke(r.outpoint, r.data.subject_pseudonym)}
                 disabled={busy === r.outpoint}
                 className="self-start rounded-md border border-red-500 bg-white px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50 dark:bg-zinc-900 dark:hover:bg-red-950/40"
               >

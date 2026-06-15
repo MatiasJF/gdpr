@@ -20,7 +20,6 @@ import {
   type CookieSelection,
 } from "@/lib/consent/cookies";
 import type { ConsentInscriptionV1 } from "@/lib/consent/schema";
-import { hashPolicyClient } from "@/lib/consent/clientHash";
 
 type Ctx = {
   visible: boolean;
@@ -91,12 +90,27 @@ export function CookieBannerProvider({ children }: { children: ReactNode }) {
         return;
       }
       const subjectId = activeWallet.getIdentityKey();
+      const purposeIds = selectionToPurposeIds(sel);
+      // Northgate (the controller) derives the pseudonym from a random
+      // per-consent salt it holds off-chain — same crypto-shredding path as
+      // the general consent flow.
+      const envelopeRes = await fetch("/api/consent/request", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          controller: NORTHGATE_CONTROLLER_DID,
+          purpose_ids: purposeIds,
+          policy_text: NORTHGATE_COOKIE_POLICY,
+          subject_id: subjectId,
+        }),
+      });
+      const envelope = await envelopeRes.json();
       const inscription: ConsentInscriptionV1 = {
         type: "gdpr-consent-v1",
         controller: NORTHGATE_CONTROLLER_DID,
-        subject_pseudonym: await hashPolicyClient(`${subjectId}|${NORTHGATE_CONTROLLER_DID}|northgate-salt`),
-        purpose_ids: selectionToPurposeIds(sel),
-        policy_hash: await hashPolicyClient(NORTHGATE_COOKIE_POLICY),
+        subject_pseudonym: envelope.subject_pseudonym,
+        purpose_ids: purposeIds,
+        policy_hash: envelope.policy_hash,
         issued_at: new Date().toISOString(),
         scope_expiry: new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString(),
       };
