@@ -33,7 +33,7 @@ Article 35(1) requires a DPIA where processing is "likely to result in a high ri
 |---|---|---|---|---|---|
 | R1 | Re-identification of the on-chain pseudonym **while the salt exists** | Med | Med | Per-consent 256-bit random salt held off-chain; access controls; the pseudonym is plaintext-free | Pseudonymous personal data by design — accepted for the consent lifetime |
 | R2 | Re-identification **after** erasure | Low | High | Crypto-shredding: irreversible destruction of salt + plaintext; no backups/replicas/soft-delete | **[PARTNER WORKSTREAM — is this anonymisation in the EDPB sense?]** |
-| R3 | Salt-store compromise (exfiltration of the linking secret) | Med | High | KMS/HSM-backed store (production); least-privilege access; audit logging | Open — PoC uses a file-backed store, not production-grade |
+| R3 | Salt-store compromise (exfiltration of the linking secret) | Med | High | KMS/HSM-backed store (production); least-privilege access; audit logging | Open — PoC persists to Netlify Blobs (file fallback locally); neither is production-grade key management |
 | R4 | Cross-controller collusion to correlate a subject | Low | Med | Random per-consent salts remove trivial correlation; shredded salts cannot participate; ZK construction recommended | Reduced, not eliminated |
 | R5 | Lost-wallet — subject cannot revoke | Med | Med | Guardian/multi-sig recovery (production) | Open — see paper §7.4 |
 | R6 | Global node replication as a Chapter V transfer | Med | Med | Pseudonymous, plaintext-free, time-bounded data | **[PARTNER WORKSTREAM — paper §4.8]** |

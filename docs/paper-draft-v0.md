@@ -255,7 +255,7 @@ The PoC implements the Section 4.1 / 4.5 erasure argument directly, so that the 
 
 ### 5.9 Status and open work
 
-At the time of this draft, the PoC supports the issue, list, revoke, audit, decode, and **crypto-shred** flows end-to-end against the BSV Blockchain testnet. Open items, tracked in the repository README, include: strict inscription-envelope parsing in the audit endpoint (the v0 decoder uses a tolerant data-push scanner sufficient for the PoC; production should parse the envelope structure directly); point-in-time audit (block-height-resolved state at past timestamps); BEEF-formatted proof bundles for offline / portable audits; hardening the salt store into an access-controlled, KMS/HSM-backed key store (the PoC uses a file-backed store under the OS temp directory); and a draft Bitcoin Request for Comments (BRC) standardising the consent-token metadata format.
+At the time of this draft, the PoC supports the issue, list, revoke, audit, decode, and **crypto-shred** flows end-to-end against the BSV Blockchain testnet. Open items, tracked in the repository README, include: strict inscription-envelope parsing in the audit endpoint (the v0 decoder uses a tolerant data-push scanner sufficient for the PoC; production should parse the envelope structure directly); point-in-time audit (block-height-resolved state at past timestamps); BEEF-formatted proof bundles for offline / portable audits; hardening the salt store into an access-controlled, KMS/HSM-backed key store (the PoC persists the salt store in Netlify Blobs when deployed, falling back to an OS-temp-dir file locally — neither is production key management); and a draft Bitcoin Request for Comments (BRC) standardising the consent-token metadata format.
 
 ---
 

@@ -31,7 +31,10 @@ is anchored on **EDPB Guidelines 02/2025 on blockchain** — see `docs/paper-dra
 
 The PoC keeps all plaintext PII off-chain. The controller derives the pseudonym
 server-side from a **random per-consent salt held off-chain** (`lib/consent/saltStore.ts`)
-and never puts the salt on the chain. On-chain inscriptions only carry:
+and never puts the salt on the chain. The salt store persists in **Netlify Blobs**
+when deployed (so the erasure demo survives across serverless invocations), and
+falls back to an OS-temp-dir JSON file for local `next dev`. On-chain inscriptions
+only carry:
 
 ```
 {
@@ -167,6 +170,7 @@ Re-mint with the current code to test the decoder.
 - [x] Cookie consent flow on the marketplace landing (granular per-category)
 - [x] Public decoder (`/decode` + `/api/decode`) — no wallet required
 - [x] Off-chain random per-consent salt store + server-side pseudonym derivation
+- [x] Persistent salt store (Netlify Blobs on deploy; OS-temp-dir file fallback locally)
 - [x] Crypto-shredding erasure (`/erasure` + `/api/consent/erase`) — anonymisation-on-erasure
 - [ ] Strict inscription-envelope parsing in audit endpoint (still trusts caller bundle)
 - [ ] Point-in-time audit (block-height-resolved state at past timestamps)
